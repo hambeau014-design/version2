@@ -219,32 +219,42 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
-  enum intr_level old_level;
 
   ASSERT (function != NULL);
+
   t = palloc_get_page (PAL_ZERO);
-  if (t == NULL) return TID_ERROR;
+  if (t == NULL)
+    return TID_ERROR;
 
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  /* Build stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
   kf->function = function;
   kf->aux = aux;
 
+  /* Build stack frame for switch_entry(). */
   ef = alloc_frame (t, sizeof *ef);
-  ef->eip = (void (*) (void)) switch_entry;
+  ef->eip = switch_entry;
 
+  /* Build stack frame for switch_threads().
+     이 부분이 switch.S와 반드시 일치해야 합니다. */
   sf = alloc_frame (t, sizeof *sf);
-  sf->eip = switch_threads;
+  sf->eip = (void (*) (void)) kernel_thread;
+  sf->ebx = 0;
   sf->ebp = 0;
+  sf->esi = 0;
+  sf->edi = 0;
 
-  old_level = intr_disable ();
+  t->stack = (uint8_t *) sf;
+
   thread_unblock (t);
-  intr_set_level (old_level);
 
-  if (should_preempt_now (thread_current (), t)) thread_yield ();
+  if (t->priority > thread_current ()->priority)
+    thread_yield ();
+
   return tid;
 }
 
