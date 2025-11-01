@@ -52,7 +52,40 @@ struct kernel_thread_frame
   };
 #define KERNEL_THREAD_FRAME_DEFINED 1
 #endif
+/* 인터럽트 바깥에서만 호출 (intr_off 상태). 
+   ready_list 전체를 훑으면서 age==20인 스레드만 재배치/승급. */
+static void
+rebalance_ready_list (void)
+{
+  ASSERT (intr_get_level () == INTR_OFF);
+  if (list_empty (&ready_list)) return;
 
+  struct list_elem *e = list_begin (&ready_list);
+  while (e != list_end (&ready_list)) {
+    struct thread *w = list_entry (e, struct thread, elem);
+    e = list_next (e);
+
+    if (w->age >= 20) {
+      w->age = 0;
+      if (thread_mlfqs) {
+        if (w->queue_level > 0) {
+          list_remove (&w->elem);
+          w->queue_level--;
+          w->time_left = mlfqs_slice_for_level (w->queue_level);
+          ready_insert (w);     /* 우선순위/레벨 기준으로 재삽입 */
+        }
+      } else {
+        int np = w->priority + 1;
+        if (np > PRI_DEFAULT) np = PRI_DEFAULT;
+        if (np != w->priority) {
+          list_remove (&w->elem);
+          w->priority = np;
+          ready_insert (w);
+        }
+      }
+    }
+  }
+}
 static struct thread *
 running_thread (void) 
 {
@@ -366,10 +399,14 @@ next_thread_to_run (void)
 static void
 schedule (void) 
 {
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  rebalance_ready_list();
+
   struct thread *cur = running_thread ();
   struct thread *next = next_thread_to_run ();
   struct thread *prev = NULL;
-  ASSERT (intr_get_level () == INTR_OFF);
+  
   ASSERT (is_thread (next));
   ASSERT (cur->status != THREAD_RUNNING || cur == next);
   if (cur != next) prev = switch_threads (cur, next);
