@@ -71,13 +71,13 @@ struct kernel_thread_frame
   };
 static void idle (void *aux UNUSED);   /* forward declaration */
 
-/* Returns the running thread. */
+/* running_thread() 수정 */
 static struct thread *
-running_thread (void) 
+running_thread (void)
 {
   uint32_t *esp;
   asm ("mov %%esp, %0" : "=g" (esp));
-  return (struct thread *) pg_round_down ((uintptr_t) esp);
+  return (struct thread *) pg_round_down ((const void *) esp);  // 수정됨
 }
 
 /* Returns true if T appears to point to a valid thread. */
@@ -557,14 +557,6 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
-}
-/* running_thread() 수정 */
-static struct thread *
-running_thread (void)
-{
-  uint32_t *esp;
-  asm ("mov %%esp, %0" : "=g" (esp));
-  return (struct thread *) pg_round_down ((const void *) esp);  // 수정됨
 }
 /* =========================================================================
  *  Missing symbols for linking
