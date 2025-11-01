@@ -1,13 +1,13 @@
 #include "threads/thread.h"
 /* =========================================================================
- * Pintos Project 1 (threads) — Learning Version
- * This is a FULL, DROP-IN replacement for the stock threads/thread.c that:
- * - Keeps ALL stock private helpers (running_thread, alloc_frame, etc.)
- * - Preserves TIME_SLICE preemption via intr_yield_on_return()
- * - Adds FIFO among equal priorities using a 'ready_seq' tiebreaker
- * - Adds Aging (ready waiters age++; at 20 -> priority+1 up to PRI_DEFAULT)
- * - Adds simplified 3-level MLFQS when booted with -mlfqs
- * - Keeps semaphore/condvar ordering adjustments in synch.c (not here)
+ *  Pintos Project 1 (threads) — Learning Version
+ *  This is a FULL, DROP-IN replacement for the stock threads/thread.c that:
+ *   - Keeps ALL stock private helpers (running_thread, alloc_frame, etc.)
+ *   - Preserves TIME_SLICE preemption via intr_yield_on_return()
+ *   - Adds FIFO among equal priorities using a 'ready_seq' tiebreaker
+ *   - Adds Aging (ready waiters age++; at 20 -> priority+1 up to PRI_DEFAULT)
+ *   - Adds simplified 3-level MLFQS when booted with -mlfqs
+ *   - Keeps semaphore/condvar ordering adjustments in synch.c (not here)
  * =========================================================================
  */
 
@@ -28,12 +28,12 @@
 /* -------------------------------------------------------------------------
  * Global scheduler data structures
  * ------------------------------------------------------------------------- */
-static struct list ready_list;          /* Ready threads (ordered). */
-static struct list all_list;            /* All threads. */
+static struct list ready_list;         /* Ready threads (ordered). */
+static struct list all_list;           /* All threads. */
 
-static struct thread *idle_thread;      /* Idle thread. */
+static struct thread *idle_thread;     /* Idle thread. */
 static struct thread *initial_thread;  /* First thread. */
-static struct lock tid_lock;            /* Protects next_tid. */
+static struct lock tid_lock;           /* Protects next_tid. */
 
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
@@ -54,8 +54,6 @@ static uint64_t ready_seq_counter;
 #define THREAD_MAGIC 0xcd6abf4b
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 
-// --- 전방 선언: 이전 문제였던 'idle' 선언과 Pintos 표준 함수 포함 ---
-static void idle (void *aux UNUSED);    /* forward declaration */
 static void kernel_thread (thread_func *, void *aux);
 static void init_thread (struct thread *, const char *name, int priority);
 static struct thread *running_thread (void);
@@ -63,37 +61,36 @@ static struct thread *next_thread_to_run (void);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-// --------------------------------------------------------------
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame
   {
-    void *eip;              /* Return address. */
-    thread_func *function;   /* Function to call. */
-    void *aux;              /* Auxiliary data for function. */
+    void *eip;                  /* Return address. */
+    thread_func *function;      /* Function to call. */
+    void *aux;                  /* Auxiliary data for function. */
   };
 
+static void idle (void *aux UNUSED);
 
-/* running_thread() - 수정된 포인터 캐스팅을 사용합니다. */
+/* Returns the running thread. */
 static struct thread *
 running_thread (void)
 {
   uint32_t *esp;
   asm ("mov %%esp, %0" : "=g" (esp));
-  // **잠재적으로 더 안전한 64비트 타입으로 캐스팅**
-  return (struct thread *) pg_round_down ((uintptr_t) esp); 
+  return (struct thread *) pg_round_down ((const void *) esp);  // 수정됨
 }
 
 /* Returns true if T appears to point to a valid thread. */
 static bool
-is_thread (struct thread *t)  
+is_thread (struct thread *t) 
 {
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
 /* Project 1 stack frame allocator: reserve SIZE bytes on T's stack. */
 static void *
-alloc_frame (struct thread *t, size_t size)  
+alloc_frame (struct thread *t, size_t size) 
 {
   /* Stack grows downward. */
   t->stack -= size;
@@ -161,7 +158,7 @@ static inline void ready_insert (struct thread *t) {
  * Initialization
  * ------------------------------------------------------------------------- */
 void
-thread_init (void)  
+thread_init (void) 
 {
   ASSERT (intr_get_level () == INTR_OFF);
 
@@ -179,12 +176,11 @@ thread_init (void)
 }
 
 void
-thread_start (void)  
+thread_start (void) 
 {
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
-  // 이전 오류 해결: 'idle' 함수의 전방 선언이 올바르게 되어있으므로 문제가 없습니다.
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   intr_enable ();
@@ -197,7 +193,7 @@ thread_start (void)
  * Ticking (called by timer interrupt)
  * ------------------------------------------------------------------------- */
 void
-thread_tick (void)  
+thread_tick (void) 
 {
   struct thread *t = thread_current ();
 
@@ -210,9 +206,9 @@ thread_tick (void)
   /* -------- Aging on ready_list --------
      Every waiting thread ages by +1 per tick.
      When age hits 20:
-     - Non-MLFQS: increase priority by +1 up to PRI_DEFAULT (as requested),
-                     and re-insert to keep ordering by new priority.
-     - MLFQS: promote one queue level upward (toward 0), and reset slice. */
+       - Non-MLFQS: increase priority by +1 up to PRI_DEFAULT (as requested),
+                    and re-insert to keep ordering by new priority.
+       - MLFQS: promote one queue level upward (toward 0), and reset slice. */
   if (!list_empty (&ready_list)) {
     struct list_elem *e = list_begin (&ready_list);
     while (e != list_end (&ready_list)) {
@@ -262,7 +258,7 @@ thread_tick (void)
 }
 
 void
-thread_print_stats (void)  
+thread_print_stats (void) 
 {
   printf ("Thread: %lld idle ticks, %lld kernel ticks\n",
           idle_ticks, kernel_ticks);
@@ -274,17 +270,17 @@ thread_print_stats (void)
 typedef void kernel_thread_func (thread_func *, void *);
 
 static void
-kernel_thread (thread_func *function, void *aux)  
+kernel_thread (thread_func *function, void *aux) 
 {
-  intr_enable ();        /* The scheduler runs with interrupts off. */
-  function (aux);        /* Run the thread function. */
-  thread_exit ();        /* If function returns, kill the thread. */
+  intr_enable ();       /* The scheduler runs with interrupts off. */
+  function (aux);       /* Run the thread function. */
+  thread_exit ();       /* If function returns, kill the thread. */
 }
 
 /* Creates a new kernel thread named NAME with given PRIORITY. */
 tid_t
 thread_create (const char *name, int priority,
-               thread_func *function, void *aux)  
+               thread_func *function, void *aux) 
 {
   struct thread *t;
   struct kernel_thread_frame *kf;
@@ -317,7 +313,7 @@ thread_create (const char *name, int priority,
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_threads;
-  sf->ebp = 0; // ebp 초기화
+  sf->ebp = 0;
 
   /* Add to run queue. */
   old_level = intr_disable ();
@@ -332,7 +328,7 @@ thread_create (const char *name, int priority,
 }
 
 void
-thread_block (void)  
+thread_block (void) 
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
@@ -342,7 +338,7 @@ thread_block (void)
 }
 
 void
-thread_unblock (struct thread *t)  
+thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
   struct thread *cur = thread_current ();
@@ -366,7 +362,7 @@ thread_unblock (struct thread *t)
 
 /* Yields the CPU. */
 void
-thread_yield (void)  
+thread_yield (void) 
 {
   struct thread *cur = thread_current ();
   enum intr_level old_level;
@@ -374,7 +370,7 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread)  
+  if (cur != idle_thread) 
     {
       ASSERT (!cur->in_ready);
       cur->status = THREAD_READY;
@@ -388,28 +384,28 @@ thread_yield (void)
  * Thread introspection and termination
  * ------------------------------------------------------------------------- */
 struct thread *
-thread_current (void)  
+thread_current (void) 
 {
   struct thread *t = running_thread ();
   ASSERT (is_thread (t));
-  /* ASSERT (t->status == THREAD_RUNNING); */  // 주석 처리함
+  ASSERT (t->status == THREAD_RUNNING);
   return t;
 }
 
 tid_t
-thread_tid (void)  
+thread_tid (void) 
 {
   return thread_current ()->tid;
 }
 
 const char *
-thread_name (void)  
+thread_name (void) 
 {
   return thread_current ()->name;
 }
 
 void
-thread_exit (void)  
+thread_exit (void) 
 {
   ASSERT (!intr_context ());
 
@@ -424,7 +420,7 @@ thread_exit (void)
  * Priority helpers
  * ------------------------------------------------------------------------- */
 void
-thread_set_priority (int new_priority)  
+thread_set_priority (int new_priority) 
 {
   if (thread_mlfqs) return;
 
@@ -444,7 +440,7 @@ thread_set_priority (int new_priority)
 }
 
 int
-thread_get_priority (void)  
+thread_get_priority (void) 
 {
   return thread_current ()->priority;
 }
@@ -459,7 +455,7 @@ int thread_get_load_avg (void) { return 0; }
  * Scheduler core
  * ------------------------------------------------------------------------- */
 static struct thread *
-next_thread_to_run (void)  
+next_thread_to_run (void) 
 {
   if (list_empty (&ready_list))
     return idle_thread;
@@ -475,7 +471,7 @@ next_thread_to_run (void)
 }
 
 static void
-schedule (void)  
+schedule (void) 
 {
   struct thread *cur = running_thread ();
   struct thread *next = next_thread_to_run ();
@@ -493,7 +489,7 @@ schedule (void)
 
 /* Finish thread switch. */
 void
-thread_schedule_tail (struct thread *prev)  
+thread_schedule_tail (struct thread *prev) 
 {
   struct thread *cur = running_thread ();
   ASSERT (intr_get_level () == INTR_OFF);
@@ -501,7 +497,7 @@ thread_schedule_tail (struct thread *prev)
   cur->status = THREAD_RUNNING;
 
   /* If the thread we switched from is dying, destroy it. */
-  if (prev != NULL && prev->status == THREAD_DYING)  
+  if (prev != NULL && prev->status == THREAD_DYING) 
     {
       ASSERT (prev != cur);
       palloc_free_page (prev);
@@ -510,7 +506,7 @@ thread_schedule_tail (struct thread *prev)
 
 /* Initialize a thread structure. */
 static void
-init_thread (struct thread *t, const char *name, int priority)  
+init_thread (struct thread *t, const char *name, int priority) 
 {
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
@@ -519,7 +515,6 @@ init_thread (struct thread *t, const char *name, int priority)
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
-  // 스택의 끝 (가장 높은 주소) 설정
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
 
@@ -538,12 +533,12 @@ init_thread (struct thread *t, const char *name, int priority)
  * Idle thread
  * ------------------------------------------------------------------------- */
 void
-idle (void *idle_started_)  
+idle (void *idle_started_) 
 {
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current ();
   sema_up (idle_started);
-  for (;;)  
+  for (;;) 
     {
       intr_disable ();
       thread_block ();
@@ -553,7 +548,7 @@ idle (void *idle_started_)
 
 /* Returns a TID to use for a new thread. */
 static tid_t
-allocate_tid (void)  
+allocate_tid (void) 
 {
   static tid_t next_tid = 1;
   tid_t tid;
@@ -564,8 +559,9 @@ allocate_tid (void)
 
   return tid;
 }
+
 /* =========================================================================
- * Missing symbols for linking
+ *  Missing symbols for linking
  * ========================================================================= */
 
 /* thread_foreach()
@@ -588,3 +584,4 @@ thread_foreach (void (*func)(struct thread *t, void *aux), void *aux)
 
 /* Needed by switch.S to locate stack offset in struct thread. */
 uint32_t thread_stack_ofs = offsetof(struct thread, stack);
+
