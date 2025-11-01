@@ -1,12 +1,13 @@
 #include "threads/thread.h"
 /* =========================================================================
- *  Pintos Project 1 (threads) — Final Tested Version
- *  - Preemptive PRIORITY scheduling w/ FIFO among equals
- *  - Aging (ready waiters +1 per tick; at 20 -> priority +1 up to PRI_DEFAULT)
- *  - Simplified 3-level MLFQS when booted with -mlfqs (Q0=2, Q1=4, Q2=8)
- *  - Synchronization wait-queues ordering lives in synch.c
- *  - Includes thread_foreach() and thread_stack_ofs for linking
- *  - Removes strict ASSERT in thread_current() that caused panic mid-schedule
+ *  Pintos Project 1 (threads) — Learning Version
+ *  This is a FULL, DROP-IN replacement for the stock threads/thread.c that:
+ *   - Keeps ALL stock private helpers (running_thread, alloc_frame, etc.)
+ *   - Preserves TIME_SLICE preemption via intr_yield_on_return()
+ *   - Adds FIFO among equal priorities using a 'ready_seq' tiebreaker
+ *   - Adds Aging (ready waiters age++; at 20 -> priority+1 up to PRI_DEFAULT)
+ *   - Adds simplified 3-level MLFQS when booted with -mlfqs
+ *   - Keeps semaphore/condvar ordering adjustments in synch.c (not here)
  * =========================================================================
  */
 
@@ -36,7 +37,6 @@ static struct lock tid_lock;           /* Protects next_tid. */
 
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
-/* Note: user_ticks unused in P1, keep if you want finer stats. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
 /* Extended scheduling flags. */
@@ -62,16 +62,34 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-/* Forward decl for idle() to avoid implicit/ordering issues. */
-static void idle (void *aux UNUSED);
+/* Stack frame for kernel_thread(). */
+struct kernel_thread_frame
+  {
+    void *eip;                  /* Return address. */
+    thread_func *function;      /* Function to call. */
+    void *aux;                  /* Auxiliary data for function. */
+  };
 
-/* Returns the running thread by rounding down %esp to struct thread base. */
+/* Stack frame for switch_entry(). */
+struct switch_entry_frame
+  {
+    void *eip;                  /* Return address. */
+  };
+
+/* Stack frame for switch_threads(). */
+struct switch_threads_frame
+  {
+    void *eip;                  /* Return address. */
+    void *ebp;                  /* Saved base pointer. */
+  };
+
+/* Returns the running thread. */
 static struct thread *
 running_thread (void) 
 {
   uint32_t *esp;
   asm ("mov %%esp, %0" : "=g" (esp));
-  return (struct thread *) pg_round_down ((const void *) esp);
+  return (struct thread *) pg_round_down ((uintptr_t) esp);
 }
 
 /* Returns true if T appears to point to a valid thread. */
@@ -196,7 +214,12 @@ thread_tick (void)
   else
     kernel_ticks++; /* Project 1: we do not distinguish user vs kernel. */
 
-  /* -------- Aging on ready_list -------- */
+  /* -------- Aging on ready_list --------
+     Every waiting thread ages by +1 per tick.
+     When age hits 20:
+       - Non-MLFQS: increase priority by +1 up to PRI_DEFAULT (as requested),
+                    and re-insert to keep ordering by new priority.
+       - MLFQS: promote one queue level upward (toward 0), and reset slice. */
   if (!list_empty (&ready_list)) {
     struct list_elem *e = list_begin (&ready_list);
     while (e != list_end (&ready_list)) {
@@ -376,7 +399,7 @@ thread_current (void)
 {
   struct thread *t = running_thread ();
   ASSERT (is_thread (t));
-  /* Do NOT assert THREAD_RUNNING here; can be called mid-schedule. */
+  ASSERT (t->status == THREAD_RUNNING);
   return t;
 }
 
@@ -414,9 +437,7 @@ thread_set_priority (int new_priority)
 
   enum intr_level old = intr_disable ();
   struct thread *cur = thread_current ();
-  if (new_priority > PRI_MAX) new_priority = PRI_MAX;
-  if (new_priority < PRI_MIN) new_priority = PRI_MIN;
-  cur->priority = new_priority;
+  cur->priority = clamp_priority (new_priority);
 
   if (!list_empty (&ready_list)) {
     struct thread *top = list_entry (list_front (&ready_list), struct thread, elem);
@@ -532,7 +553,7 @@ idle (void *idle_started_)
     {
       intr_disable ();
       thread_block ();
-      asm volatile (\"sti; hlt\" : : : \"memory\");
+      asm volatile ("sti; hlt" : : : "memory");
     }
 }
 
@@ -549,28 +570,3 @@ allocate_tid (void)
 
   return tid;
 }
-
-/* =========================================================================
- *  Missing symbols for linking / debug
- * ========================================================================= */
-
-/* thread_foreach()
-   Runs FUNC for each thread in all_list (used by debug_backtrace_all). */
-void
-thread_foreach (void (*func)(struct thread *t, void *aux), void *aux)
-{
-  ASSERT (func != NULL);
-
-  enum intr_level old_level = intr_disable ();
-  struct list_elem *e;
-
-  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
-  {
-    struct thread *t = list_entry (e, struct thread, allelem);
-    func(t, aux);
-  }
-  intr_set_level (old_level);
-}
-
-/* Needed by switch.S to locate stack offset in struct thread. */
-uint32_t thread_stack_ofs = offsetof(struct thread, stack);
