@@ -80,8 +80,8 @@ running_thread (void)
 {
   uint32_t *esp;
   asm ("mov %%esp, %0" : "=g" (esp));
-  // 이전 페이지 폴트 문제 해결을 위해 (const void *)로 명시적 캐스팅
-  return (struct thread *) pg_round_down ((const void *) esp);
+  // **잠재적으로 더 안전한 64비트 타입으로 캐스팅**
+  return (struct thread *) pg_round_down ((uintptr_t) esp); 
 }
 
 /* Returns true if T appears to point to a valid thread. */
