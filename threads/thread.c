@@ -69,19 +69,7 @@ struct kernel_thread_frame
     thread_func *function;      /* Function to call. */
     void *aux;                  /* Auxiliary data for function. */
   };
-
-/* Stack frame for switch_entry(). */
-struct switch_entry_frame
-  {
-    void *eip;                  /* Return address. */
-  };
-
-/* Stack frame for switch_threads(). */
-struct switch_threads_frame
-  {
-    void *eip;                  /* Return address. */
-    void *ebp;                  /* Saved base pointer. */
-  };
+static void idle (void *aux UNUSED);   /* forward declaration */
 
 /* Returns the running thread. */
 static struct thread *
@@ -570,3 +558,36 @@ allocate_tid (void)
 
   return tid;
 }
+/* running_thread() 수정 */
+static struct thread *
+running_thread (void)
+{
+  uint32_t *esp;
+  asm ("mov %%esp, %0" : "=g" (esp));
+  return (struct thread *) pg_round_down ((const void *) esp);  // 수정됨
+}
+/* =========================================================================
+ *  Missing symbols for linking
+ * ========================================================================= */
+
+/* thread_foreach()
+   Runs FUNC for each thread in all_list (used by debug_backtrace_all). */
+void
+thread_foreach (void (*func)(struct thread *t, void *aux), void *aux)
+{
+  ASSERT (func != NULL);
+
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    func(t, aux);
+  }
+  intr_set_level (old_level);
+}
+
+/* Needed by switch.S to locate stack offset in struct thread. */
+uint32_t thread_stack_ofs = offsetof(struct thread, stack);
+
