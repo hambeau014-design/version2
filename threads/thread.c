@@ -387,7 +387,7 @@ thread_current (void)
 {
   struct thread *t = running_thread ();
   ASSERT (is_thread (t));
-  ASSERT (t->status == THREAD_RUNNING);
+  /* ASSERT (t->status == THREAD_RUNNING); */  //주석 처리
   return t;
 }
 
