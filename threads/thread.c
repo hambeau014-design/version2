@@ -69,27 +69,15 @@ struct kernel_thread_frame
     thread_func *function;      /* Function to call. */
     void *aux;                  /* Auxiliary data for function. */
   };
-
-/* Stack frame for switch_entry(). */
-struct switch_entry_frame
-  {
-    void *eip;                  /* Return address. */
-  };
-
-/* Stack frame for switch_threads(). */
-struct switch_threads_frame
-  {
-    void *eip;                  /* Return address. */
-    void *ebp;                  /* Saved base pointer. */
-  };
+static void idle (void *aux UNUSED);   /* forward declaration */
 
 /* Returns the running thread. */
 static struct thread *
-running_thread (void) 
+running_thread (void)
 {
   uint32_t *esp;
   asm ("mov %%esp, %0" : "=g" (esp));
-  return (struct thread *) pg_round_down ((uintptr_t) esp);
+  return (struct thread *) pg_round_down ((const void *) esp);  // 수정됨
 }
 
 /* Returns true if T appears to point to a valid thread. */
