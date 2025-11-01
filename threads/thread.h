@@ -1,6 +1,19 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+/* =========================================================================
+ *  Pintos Project 1 (threads) — Learning Version
+ *  - Preemptive PRIORITY scheduling w/ FIFO among equals
+ *  - Aging (ready-queue waiting +1 each tick; at 20 -> priority +1)
+ *  - Simplified 3-level MLFQS when booted with -mlfqs (Q0=2, Q1=4, Q2=8)
+ *  - Synchronization wait-queues ordered by priority (FIFO on ties)
+ * -------------------------------------------------------------------------
+ *  This header only introduces SMALL, LOCAL changes:
+ *   - Extend struct thread with fields for FIFO tie-breaking, aging, MLFQS
+ *   - Keep all stock Pintos interfaces so existing code/tests still compile
+ * =========================================================================
+ */
+
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -15,8 +28,7 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
-/* Thread identifier type.
-   You can redefine this to whatever type you like. */
+/* Thread identifier type. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
@@ -27,7 +39,7 @@ typedef int tid_t;
 
 struct thread
   {
-    /* Owned by thread.c. */
+    /* ---- Stock Pintos fields (unchanged) ---- */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
@@ -38,32 +50,30 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-#ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-#endif
+    /* ---- Project 1 Learning Additions ---- */
+    /* Aging: incremented each tick while waiting in ready_list. */
+    int age;
 
-    /* ---- Priority Scheduling w/ Aging ---- */
-    int age;                            /* Aging counter while in ready queue. */
-    uint64_t ready_seq;                 /* FIFO tie-breaker for equal priority. */
-    bool in_ready;                      /* Whether in ready_list (to avoid dup). */
+    /* FIFO tie-breaker: increasing sequence when inserted to ready_list.
+       Among equal priority (or same MLFQS level), smaller ready_seq runs first. */
+    uint64_t ready_seq;
 
-    /* ---- Simplified MLFQS ----
-       Active when thread_mlfqs == true.
-       Q0(2 ticks), Q1(4), Q2(8). Lower level number means higher priority queue. */
-    int queue_level;                    /* 0,1,2 if mlfqs; -1 otherwise. */
-    int time_left;                      /* Remaining time slice in current queue. */
+    /* Ready-list membership flag (defensive: avoid double-insert). */
+    bool in_ready;
 
-    /* Owned by thread.c. */
+    /* Simplified MLFQS (enabled with -mlfqs):
+       Q0=2 ticks, Q1=4, Q2=8. Lower level number = higher queue. */
+    int queue_level;   /* -1 in non-MLFQS mode; otherwise 0/1/2. */
+    int time_left;     /* Remaining timeslice within current queue. */
+
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-/* If false (default), use round-robin scheduler.
-   If true, use multi-level feedback queue scheduler.
-   Controlled by kernel command-line option "-o mlfqs". */
+/* If false (default), use round-robin with (extended) priority.
+   If true, use simplified 3-level MLFQS (not the numeric BSD one). */
 extern bool thread_mlfqs;
 
-/* Project helper: clamp priority to bounds. */
+/* Small helper to clamp priority to valid range. */
 static inline int clamp_priority (int p) {
   if (p > PRI_MAX) return PRI_MAX;
   if (p < PRI_MIN) return PRI_MIN;
@@ -92,7 +102,7 @@ void thread_yield (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
 
-/* Nice/CPU not used for simplified MLFQS. */
+/* Dummy stubs (intentionally trivial) to satisfy tests framework API. */
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
