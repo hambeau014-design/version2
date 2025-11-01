@@ -27,12 +27,17 @@
 */
 
 #include "threads/synch.h"
+/* =========================================================================
+ *  Pintos Project 1 (threads) — Learning Version
+ *  Waiter ordering for semaphores and condition variables:
+ *   - Priority-ordered (higher first), FIFO on ties
+ *   - Matches the scheduler's expectation so preemption works instantly
+ * =========================================================================
+ */
 #include <stdio.h>
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
-/* Semaphore structure is defined in synch.h */
 
 /* Initializes semaphore SEMA to VALUE. */
 void
@@ -43,7 +48,7 @@ sema_init (struct semaphore *sema, unsigned value)
   list_init (&sema->waiters);
 }
 
-/* Insert into a waiters list ordered by priority (FIFO for ties). */
+/* Insert current thread into WAITERS ordered by priority (FIFO ties). */
 static inline void
 push_waiter_prio_fifo (struct list *waiters, struct thread *t)
 {
@@ -54,7 +59,7 @@ push_waiter_prio_fifo (struct list *waiters, struct thread *t)
   struct list_elem *e = list_begin (waiters);
   for (; e != list_end (waiters); e = list_next (e)) {
     struct thread *x = list_entry (e, struct thread, elem);
-    if (x->priority < t->priority) break;
+    if (x->priority < t->priority) break; /* insert before lower prio */
   }
   list_insert (e, &t->elem);
 }
@@ -78,6 +83,28 @@ sema_down (struct semaphore *sema)
   intr_set_level (old_level);
 }
 
+/* Try down (unchanged from Pintos). */
+bool
+sema_try_down (struct semaphore *sema) 
+{
+  enum intr_level old_level;
+  bool success;
+
+  ASSERT (sema != NULL);
+
+  old_level = intr_disable ();
+  if (sema->value > 0) 
+    {
+      sema->value--;
+      success = true; 
+    }
+  else
+    success = false;
+  intr_set_level (old_level);
+
+  return success;
+}
+
 /* Up or "V" operation on a semaphore. */
 void
 sema_up (struct semaphore *sema) 
@@ -96,12 +123,11 @@ sema_up (struct semaphore *sema)
   sema->value++;
   intr_set_level (old_level);
 
-  /* Allow immediate preemption if a higher-priority thread was unblocked. */
+  /* If a higher-priority thread woke up, allow it to run ASAP. */
   thread_yield ();
 }
 
-/* Lock and condition variable follow Pintos skeleton with waiter ordering. */
-
+/* Initializes LOCK. */
 void
 lock_init (struct lock *lock)
 {
@@ -110,6 +136,7 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
+/* Acquires LOCK, sleeping until it becomes available if necessary. */
 void
 lock_acquire (struct lock *lock)
 {
@@ -135,6 +162,7 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
+/* Releases LOCK, waking up one waiting thread, if any. */
 void
 lock_release (struct lock *lock) 
 {
@@ -149,11 +177,10 @@ bool
 lock_held_by_current_thread (const struct lock *lock) 
 {
   ASSERT (lock != NULL);
-
   return lock->holder == thread_current ();
 }
 
-/* Condition variable. */
+/* Condition variable. ---------------------------------------------------- */
 
 void
 cond_init (struct condition *cond)
@@ -184,6 +211,8 @@ cond_push_waiter_prio (struct list *waiters, struct semaphore_elem *se)
   list_insert (e, &se->elem);
 }
 
+/* Atomically releases LOCK and waits for COND to be signaled by another
+   piece of code. */
 void
 cond_wait (struct condition *cond, struct lock *lock) 
 {
@@ -195,13 +224,14 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   sema_init (&waiter.semaphore, 0);
-  waiter.priority = thread_current ()->priority;
+  waiter.priority = thread_current ()->priority; /* snapshot */
   cond_push_waiter_prio (&cond->waiters, &waiter);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
 }
 
+/* If any threads are waiting on COND, signal one of them to wake up. */
 void
 cond_signal (struct condition *cond, struct lock *lock UNUSED) 
 {
@@ -218,6 +248,7 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
     }
 }
 
+/* Wakes up all threads, if any, waiting on COND. */
 void
 cond_broadcast (struct condition *cond, struct lock *lock) 
 {
@@ -226,26 +257,4 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
-}
-
-/* Try-down helper (kept identical to Pintos). */
-bool
-sema_try_down (struct semaphore *sema) 
-{
-  enum intr_level old_level;
-  bool success;
-
-  ASSERT (sema != NULL);
-
-  old_level = intr_disable ();
-  if (sema->value > 0) 
-    {
-      sema->value--;
-      success = true; 
-    }
-  else
-    success = false;
-  intr_set_level (old_level);
-
-  return success;
 }
