@@ -558,3 +558,23 @@ allocate_tid (void)
 
   return tid;
 }
+/* thread_foreach()
+   Runs FUNC for each thread in all_list (used by debug_backtrace_all). */
+void
+thread_foreach (void (*func)(struct thread *t, void *aux), void *aux)
+{
+  ASSERT (func != NULL);
+
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    func(t, aux);
+  }
+  intr_set_level (old_level);
+}
+
+/* Needed by switch.S to locate stack offset in struct thread. */
+uint32_t thread_stack_ofs = offsetof(struct thread, stack);
